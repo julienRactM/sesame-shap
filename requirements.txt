@@ -1,0 +1,49 @@
+# Core Data Science Libraries
+pandas>=1.5.0
+numpy>=1.21.0
+scipy>=1.9.0
+
+# Machine Learning
+scikit-learn>=1.2.0
+xgboost>=1.7.0
+lightgbm>=3.3.0
+
+# Interpretability - Primary
+shap>=0.42.0
+
+# Interpretability - Comparison (Bonus)
+lime>=0.2.0.1
+sage-ml>=0.0.5
+
+# Fairness and Bias Analysis
+fairlearn>=0.8.0
+aif360>=0.5.0
+imbalanced-learn>=0.10.0
+
+# Data Visualization
+matplotlib>=3.6.0
+seaborn>=0.12.0
+plotly>=5.15.0
+
+# Interactive Dashboards
+streamlit>=1.25.0
+dash>=2.12.0
+flask>=2.3.0
+
+# Data Acquisition
+kagglehub>=0.2.0
+
+# Jupyter and Notebook
+jupyter>=1.0.0
+jupyterlab>=4.0.0
+ipywidgets>=8.0.0
+
+# Utilities
+tqdm>=4.64.0
+python-dotenv>=1.0.0
+
+# Statistical Analysis
+statsmodels>=0.14.0
+
+# Additional Visualization for SHAP
+ipython>=8.0.0
