@@ -18,6 +18,14 @@ fi
 echo "🚀 Activation de l'environnement virtuel..."
 source venv/bin/activate
 
+# Vérifier que l'environnement virtuel est bien activé
+if [[ "$VIRTUAL_ENV" != "" ]]; then
+    echo "✅ Environnement virtuel activé: $VIRTUAL_ENV"
+else
+    echo "❌ Erreur: Impossible d'activer l'environnement virtuel"
+    exit 1
+fi
+
 # Mettre à jour pip
 echo "⬆️ Mise à jour de pip..."
 pip install --upgrade pip

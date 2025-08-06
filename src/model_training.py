@@ -34,8 +34,9 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score, roc_auc_score,
     confusion_matrix, classification_report, roc_curve, precision_recall_curve,
-    calibration_curve, brier_score_loss
+    brier_score_loss
 )
+from sklearn.calibration import calibration_curve
 from sklearn.calibration import CalibratedClassifierCV
 import xgboost as xgb
 import lightgbm as lgb
