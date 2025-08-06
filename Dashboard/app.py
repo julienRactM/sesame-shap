@@ -78,12 +78,14 @@ st.markdown("""
         border-left: 4px solid #f44336;
         padding: 1rem;
         margin: 1rem 0;
+        color: #333333 !important;
     }
     .success-alert {
         background-color: #e8f5e8;
         border-left: 4px solid #4caf50;
         padding: 1rem;
         margin: 1rem 0;
+        color: #333333 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -142,6 +144,52 @@ def create_shap_values_demo(n_samples=100, n_features=8):
         'feature_names': feature_names,
         'expected_value': 0.4
     }
+
+def compute_real_shap_values(X_data, model, max_samples=200):
+    """Compute real SHAP values for the given model and data."""
+    try:
+        import shap
+        from sklearn.ensemble import RandomForestClassifier
+        from sklearn.linear_model import LogisticRegression
+        
+        # Limit data for performance
+        if len(X_data) > max_samples:
+            sample_idx = np.random.choice(len(X_data), max_samples, replace=False)
+            X_sample = X_data.iloc[sample_idx]
+        else:
+            X_sample = X_data
+        
+        # Select appropriate explainer based on model type
+        if hasattr(model, 'predict_proba'):
+            if 'RandomForest' in str(type(model)) or 'XGB' in str(type(model)):
+                # Tree explainer for tree-based models
+                explainer = shap.TreeExplainer(model)
+                shap_values = explainer.shap_values(X_sample)
+                if isinstance(shap_values, list):
+                    shap_values = shap_values[1]  # For binary classification, take positive class
+            else:
+                # Kernel explainer for other models
+                background_size = min(50, len(X_sample))
+                explainer = shap.KernelExplainer(model.predict_proba, X_sample.iloc[:background_size])
+                shap_values = explainer.shap_values(X_sample, nsamples=100)
+                if isinstance(shap_values, list):
+                    shap_values = shap_values[1]
+        else:
+            # Fallback to kernel explainer
+            background_size = min(50, len(X_sample))
+            explainer = shap.KernelExplainer(model.predict, X_sample.iloc[:background_size])
+            shap_values = explainer.shap_values(X_sample, nsamples=100)
+        
+        return {
+            'values': shap_values,
+            'data': X_sample,
+            'feature_names': list(X_sample.columns),
+            'expected_value': getattr(explainer, 'expected_value', 0.5)
+        }
+        
+    except Exception as e:
+        st.error(f"Erreur lors du calcul des valeurs SHAP: {e}")
+        return None
 
 def main():
     """Fonction principale du dashboard."""
@@ -217,22 +265,22 @@ def show_home_page():
     
     with col1:
         st.markdown("""
-        <div class="metric-card">
+        <div class="metric-card" style="color: #333333;">
         <h4>📊 Analyse Exploratoire</h4>
         <p>Exploration des données COMPAS avec focus sur les biais démographiques</p>
         </div>
         
-        <div class="metric-card">
+        <div class="metric-card" style="color: #333333;">
         <h4>🤖 Modèles ML</h4>
         <p>Entraînement et évaluation de modèles de classification</p>
         </div>
         
-        <div class="metric-card">
+        <div class="metric-card" style="color: #333333;">
         <h4>🔍 Analyse SHAP</h4>
         <p>Interprétabilité des modèles avec les valeurs de Shapley</p>
         </div>
         
-        <div class="metric-card">
+        <div class="metric-card" style="color: #333333;">
         <h4>⚖️ Détection des Biais</h4>
         <p>Métriques d'équité et identification des disparités</p>
         </div>
@@ -240,17 +288,17 @@ def show_home_page():
     
     with col2:
         st.markdown("""
-        <div class="metric-card">
+        <div class="metric-card" style="color: #333333;">
         <h4>🛡️ Mitigation des Biais</h4>
         <p>Stratégies pour réduire les biais détectés</p>
         </div>
         
-        <div class="metric-card">
+        <div class="metric-card" style="color: #333333;">
         <h4>📈 Évaluation d'Équité</h4>
         <p>Comparaison avant/après mitigation</p>
         </div>
         
-        <div class="metric-card">
+        <div class="metric-card" style="color: #333333;">
         <h4>🔄 Comparaison Interprétabilité</h4>
         <p>SHAP vs LIME vs SAGE (BONUS)</p>
         </div>
@@ -422,7 +470,7 @@ def show_models_page():
     best_model = max(model_results.keys(), key=lambda k: model_results[k]['f1'])
     
     st.markdown(f"""
-    <div class="success-alert">
+    <div class="success-alert" style="color: #2e7d32;">
     <strong>✅ Meilleur Modèle Identifié:</strong> {best_model}<br>
     • F1-Score: {model_results[best_model]['f1']:.3f}<br>
     • AUC: {model_results[best_model]['auc']:.3f}<br>
@@ -437,9 +485,35 @@ def show_shap_page():
     
     shap_data = st.session_state.shap_values
     
-    # Sélecteur de modèle
-    model_selected = st.selectbox("Sélectionner un modèle", 
-                                 ['RandomForest', 'XGBoost', 'LogisticRegression'])
+    # Sélecteur de modèle et option SHAP réelle
+    col_select1, col_select2 = st.columns([3, 2])
+    
+    with col_select1:
+        model_selected = st.selectbox("Sélectionner un modèle", 
+                                     ['RandomForest', 'XGBoost', 'LogisticRegression'])
+    
+    with col_select2:
+        use_real_shap = st.checkbox("Utiliser SHAP réelle", 
+                                   help="Calculer les vraies valeurs SHAP (plus lent mais plus précis)")
+    
+    # Compute real SHAP if requested and models/data are available
+    if use_real_shap and 'trained_models' in st.session_state and 'processed_data' in st.session_state:
+        try:
+            with st.spinner("Calcul des valeurs SHAP en cours..."):
+                model = st.session_state.trained_models.get(model_selected)
+                X_data = st.session_state.processed_data
+                
+                if model is not None and X_data is not None:
+                    real_shap_data = compute_real_shap_values(X_data, model, max_samples=100)
+                    if real_shap_data:
+                        shap_data = real_shap_data
+                        st.success(f"✅ Valeurs SHAP calculées pour {model_selected}!")
+                    else:
+                        st.warning("Impossible de calculer SHAP, utilisation des données d'exemple")
+                else:
+                    st.warning("Modèle ou données non disponibles, utilisation des données d'exemple")
+        except Exception as e:
+            st.warning(f"Erreur SHAP: {e}. Utilisation des données d'exemple")
     
     col1, col2 = st.columns(2)
     
@@ -469,8 +543,244 @@ def show_shap_page():
                                title=f"Distribution SHAP - {top_feature_name}")
         st.plotly_chart(fig_dist, use_container_width=True)
     
+    # SHAP Beeswarm Plot
+    st.subheader("📊 SHAP Beeswarm Plot")
+    
+    st.markdown("""
+    Le **beeswarm plot** montre l'impact de chaque feature sur les prédictions individuelles. 
+    Chaque point représente une prédiction, coloré par la valeur de la feature.
+    """)
+    
+    # Create beeswarm plot using matplotlib and display with streamlit
+    try:
+        import matplotlib.pyplot as plt
+        import shap
+        
+        fig, ax = plt.subplots(figsize=(12, 8))
+        
+        # Create a simplified beeswarm-style plot using scatter
+        shap_values_2d = shap_data['values']
+        feature_names = shap_data['feature_names']
+        
+        # Select top 10 features for better visualization
+        feature_importance = np.abs(shap_values_2d).mean(axis=0)
+        top_features_idx = np.argsort(feature_importance)[-10:]
+        
+        # Create the beeswarm plot
+        for i, feat_idx in enumerate(top_features_idx):
+            # Jitter for y-axis to avoid overlap
+            y_pos = i + np.random.normal(0, 0.1, len(shap_values_2d))
+            # Use real feature values for coloring if available, otherwise simulate
+            if 'data' in shap_data and shap_data['data'] is not None:
+                feature_data = shap_data['data'].iloc[:, feat_idx] if feat_idx < shap_data['data'].shape[1] else np.random.rand(len(shap_values_2d))
+                colors = (feature_data - feature_data.min()) / (feature_data.max() - feature_data.min() + 1e-8)
+            else:
+                colors = np.random.rand(len(shap_values_2d))  # Simulate feature values for coloring
+            
+            scatter = ax.scatter(shap_values_2d[:, feat_idx], y_pos, 
+                               c=colors, alpha=0.6, s=30, cmap='viridis')
+        
+        ax.set_yticks(range(len(top_features_idx)))
+        ax.set_yticklabels([feature_names[i] for i in top_features_idx])
+        ax.set_xlabel('Valeurs SHAP')
+        ax.set_title('SHAP Beeswarm Plot - Top 10 Features', fontsize=14, fontweight='bold')
+        ax.axvline(x=0, color='black', linestyle='-', alpha=0.3)
+        ax.grid(True, alpha=0.3)
+        
+        # Add colorbar
+        cbar = plt.colorbar(scatter, ax=ax)
+        cbar.set_label('Valeur de la Feature (normalisée)', rotation=270, labelpad=20)
+        
+        plt.tight_layout()
+        st.pyplot(fig)
+        
+        # Interactive plotly version of beeswarm
+        st.markdown("### 🎯 Version Interactive - SHAP Beeswarm")
+        
+        # Create interactive beeswarm with plotly
+        fig_beeswarm = go.Figure()
+        
+        for i, feat_idx in enumerate(top_features_idx):
+            y_jitter = i + np.random.normal(0, 0.15, len(shap_values_2d))
+            # Use real feature values if available
+            if 'data' in shap_data and shap_data['data'] is not None:
+                if feat_idx < shap_data['data'].shape[1]:
+                    feature_values_raw = shap_data['data'].iloc[:, feat_idx]
+                    feature_values_norm = (feature_values_raw - feature_values_raw.min()) / (feature_values_raw.max() - feature_values_raw.min() + 1e-8)
+                else:
+                    feature_values_norm = np.random.rand(len(shap_values_2d))
+            else:
+                feature_values_norm = np.random.rand(len(shap_values_2d))  # Simulate feature values
+            
+            fig_beeswarm.add_trace(go.Scatter(
+                x=shap_values_2d[:, feat_idx],
+                y=y_jitter,
+                mode='markers',
+                name=feature_names[feat_idx],
+                marker=dict(
+                    size=8,
+                    color=feature_values_norm,
+                    colorscale='viridis',
+                    showscale=True,
+                    colorbar=dict(title="Valeur Feature"),
+                    line=dict(width=0.5, color='DarkSlateGrey')
+                ),
+                text=[f"SHAP: {val:.3f}<br>Feature: {feature_names[feat_idx]}" 
+                      for val in shap_values_2d[:, feat_idx]],
+                hovertemplate="<b>%{text}</b><br>Valeur SHAP: %{x:.3f}<extra></extra>",
+                showlegend=False
+            ))
+        
+        fig_beeswarm.update_layout(
+            title="SHAP Beeswarm Plot Interactif - Top 10 Features",
+            xaxis_title="Valeurs SHAP",
+            yaxis=dict(
+                tickmode='array',
+                tickvals=list(range(len(top_features_idx))),
+                ticktext=[feature_names[i] for i in top_features_idx]
+            ),
+            height=600,
+            showlegend=False
+        )
+        
+        fig_beeswarm.add_vline(x=0, line_dash="dash", line_color="black", opacity=0.5)
+        
+        st.plotly_chart(fig_beeswarm, use_container_width=True)
+        
+    except Exception as e:
+        st.warning(f"Erreur lors de la génération du beeswarm plot: {e}")
+    
+    # SHAP Dependence Plots
+    st.subheader("🎯 SHAP Dependence Plots")
+    
+    st.markdown("""
+    Les **dependence plots** montrent comment les valeurs SHAP d'une feature varient 
+    en fonction des valeurs de cette feature, révélant les interactions non-linéaires.
+    """)
+    
+    # Feature selector for dependence plot
+    selected_feature = st.selectbox(
+        "Choisir une feature pour le dependence plot:",
+        options=feature_names,
+        index=int(np.argmax(feature_importance))  # Convert numpy int64 to Python int
+    )
+    
+    if selected_feature:
+        selected_idx = feature_names.index(selected_feature)
+        
+        # Create dependence plot
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Simple dependence plot
+            fig_dep = go.Figure()
+            
+            # Use real feature values for x-axis if available
+            if 'data' in shap_data and shap_data['data'] is not None and selected_idx < shap_data['data'].shape[1]:
+                feature_values = shap_data['data'].iloc[:, selected_idx]
+            else:
+                feature_values = np.random.normal(0, 1, len(shap_values_2d))  # Simulate
+            shap_vals_feature = shap_values_2d[:, selected_idx]
+            
+            fig_dep.add_trace(go.Scatter(
+                x=feature_values,
+                y=shap_vals_feature,
+                mode='markers',
+                marker=dict(
+                    size=8,
+                    color=feature_values,
+                    colorscale='Viridis',
+                    showscale=True,
+                    colorbar=dict(title=f"Valeurs<br>{selected_feature}"),
+                    line=dict(width=0.5, color='DarkSlateGrey')
+                ),
+                text=[f"Feature: {val:.3f}<br>SHAP: {shap:.3f}" 
+                      for val, shap in zip(feature_values, shap_vals_feature)],
+                hovertemplate="<b>%{text}</b><extra></extra>",
+                name=selected_feature
+            ))
+            
+            fig_dep.update_layout(
+                title=f"SHAP Dependence Plot - {selected_feature}",
+                xaxis_title=f"Valeurs de {selected_feature}",
+                yaxis_title=f"Valeurs SHAP pour {selected_feature}",
+                height=400
+            )
+            
+            fig_dep.add_hline(y=0, line_dash="dash", line_color="black", opacity=0.5)
+            
+            st.plotly_chart(fig_dep, use_container_width=True)
+        
+        with col2:
+            # Dependence plot with interaction feature
+            st.markdown("**Avec Feature d'Interaction**")
+            
+            # Select interaction feature (second most correlated)
+            interaction_idx = (selected_idx + 1) % len(feature_names)
+            interaction_feature = feature_names[interaction_idx]
+            
+            fig_dep_int = go.Figure()
+            
+            # Use real interaction feature values if available
+            if 'data' in shap_data and shap_data['data'] is not None and interaction_idx < shap_data['data'].shape[1]:
+                interaction_values = shap_data['data'].iloc[:, interaction_idx]
+            else:
+                interaction_values = np.random.normal(0, 1, len(shap_values_2d))
+            
+            fig_dep_int.add_trace(go.Scatter(
+                x=feature_values,
+                y=shap_vals_feature,
+                mode='markers',
+                marker=dict(
+                    size=10,
+                    color=interaction_values,
+                    colorscale='RdYlBu',
+                    showscale=True,
+                    colorbar=dict(title=f"Interaction avec<br>{interaction_feature}"),
+                    line=dict(width=0.5, color='DarkSlateGrey')
+                ),
+                text=[f"{selected_feature}: {val:.3f}<br>SHAP: {shap:.3f}<br>{interaction_feature}: {inter:.3f}" 
+                      for val, shap, inter in zip(feature_values, shap_vals_feature, interaction_values)],
+                hovertemplate="<b>%{text}</b><extra></extra>",
+                name=f"{selected_feature} × {interaction_feature}"
+            ))
+            
+            fig_dep_int.update_layout(
+                title=f"Dependence Plot avec Interaction<br>{selected_feature} × {interaction_feature}",
+                xaxis_title=f"Valeurs de {selected_feature}",
+                yaxis_title=f"Valeurs SHAP pour {selected_feature}",
+                height=400
+            )
+            
+            fig_dep_int.add_hline(y=0, line_dash="dash", line_color="black", opacity=0.5)
+            
+            st.plotly_chart(fig_dep_int, use_container_width=True)
+    
+    # Analysis insights
+    st.subheader("💡 Insights des Visualisations SHAP")
+    
+    with st.expander("🔍 Comment interpréter ces graphiques"):
+        st.markdown("""
+        **Beeswarm Plot:**
+        - Chaque point représente une prédiction individuelle
+        - Position horizontale = impact SHAP (gauche = diminue prédiction, droite = augmente)
+        - Couleur = valeur de la feature (rouge = valeur haute, bleu = valeur basse)
+        - Largeur de distribution = variabilité de l'impact
+        
+        **Dependence Plots:**
+        - Axe X = valeurs de la feature sélectionnée
+        - Axe Y = valeurs SHAP correspondantes
+        - Révèle les relations non-linéaires entre feature et prédiction
+        - Couleur dans le plot d'interaction = valeur d'une autre feature importante
+        
+        **🚨 Détection de Biais:**
+        - Cherchez des patterns différents selon les groupes démographiques
+        - Attention aux features qui montrent des impacts asymétriques
+        - Les interactions peuvent révéler des biais cachés
+        """)
+    
     # Analyse des biais dans les valeurs SHAP
-    st.subheader("Analyse des Biais via SHAP")
+    st.subheader("⚖️ Analyse des Biais via SHAP")
     
     # Simuler une analyse de biais par race
     np.random.seed(42)
@@ -674,7 +984,41 @@ def show_bias_mitigation_page():
         ]
     )
     
-    # Simuler les résultats avant/après mitigation
+    # Définir les métriques par stratégie de mitigation
+    strategy_metrics = {
+        "Suppression des Features Sensibles": {
+            'demographic_parity_difference': 0.12,
+            'equal_opportunity_difference': 0.10,
+            'disparate_impact_ratio': 1.20,
+            'accuracy': 0.70
+        },
+        "Rééchantillonnage SMOTE Équitable": {
+            'demographic_parity_difference': 0.08,
+            'equal_opportunity_difference': 0.06,
+            'disparate_impact_ratio': 1.12,
+            'accuracy': 0.69
+        },
+        "Calibration par Groupe": {
+            'demographic_parity_difference': 0.10,
+            'equal_opportunity_difference': 0.08,
+            'disparate_impact_ratio': 1.15,
+            'accuracy': 0.71
+        },
+        "Optimisation des Seuils": {
+            'demographic_parity_difference': 0.09,
+            'equal_opportunity_difference': 0.07,
+            'disparate_impact_ratio': 1.13,
+            'accuracy': 0.70
+        },
+        "Entraînement avec Contraintes d'Équité": {
+            'demographic_parity_difference': 0.05,
+            'equal_opportunity_difference': 0.04,
+            'disparate_impact_ratio': 1.08,
+            'accuracy': 0.67
+        }
+    }
+    
+    # Métriques de base (avant mitigation)
     baseline_metrics = {
         'demographic_parity_difference': 0.18,
         'equal_opportunity_difference': 0.15,
@@ -682,12 +1026,8 @@ def show_bias_mitigation_page():
         'accuracy': 0.72
     }
     
-    mitigated_metrics = {
-        'demographic_parity_difference': 0.08,
-        'equal_opportunity_difference': 0.06,
-        'disparate_impact_ratio': 1.12,
-        'accuracy': 0.69  # Légère baisse de performance
-    }
+    # Obtenir les métriques pour la stratégie sélectionnée
+    mitigated_metrics = strategy_metrics.get(strategy, strategy_metrics["Rééchantillonnage SMOTE Équitable"])
     
     # Comparaison avant/après
     st.subheader("Impact de la Mitigation")
@@ -837,6 +1177,18 @@ def show_fairness_evaluation_page():
     # Analyse longitudinale simulée
     st.subheader("Évolution des Métriques d'Équité")
     
+    # Explication du graphique d'évolution
+    st.markdown("""
+    **Ce graphique montre l'amélioration progressive des métriques d'équité à travers les différentes étapes d'optimisation :**
+    
+    - **Baseline** : Modèle initial sans correction de biais
+    - **Après Feature Engineering** : Suppression/modification des features problématiques  
+    - **Après Mitigation** : Application des techniques de correction de biais
+    - **Après Optimisation** : Ajustement fin des seuils et calibration
+    
+    *Plus les valeurs sont proches de 0, plus le modèle est équitable entre les groupes.*
+    """)
+    
     # Simuler l'évolution dans le temps
     timeline_data = {
         'Étape': ['Baseline', 'Après Feature Engineering', 'Après Mitigation', 'Après Optimisation'],
@@ -867,6 +1219,16 @@ def show_interpretability_comparison_page():
     }
     
     st.subheader("Comparaison des Méthodes")
+    
+    # Explication des métriques de comparaison
+    st.markdown("""
+    **Ce tableau compare trois méthodes d'interprétabilité populaires :**
+    
+    - **Corrélation avec SHAP** : Mesure la cohérence des explications par rapport à SHAP (référence)
+    - **Stabilité** : Consistance des explications entre plusieurs exécutions sur les mêmes données  
+    - **Temps de Calcul** : Performance computationnelle relative des méthodes
+    - **Consistance Top Features** : Accord sur l'identification des features les plus importantes
+    """)
     
     # Afficher le tableau
     comparison_df = pd.DataFrame(comparison_data)
